@@ -1,0 +1,137 @@
+<html>
+<head>
+  <script type="text/javascript" src="/_ah/channel/jsapi"></script>
+<style type="text/css">
+  body {
+    font-family: sans-serif;
+    font-size: 10pt;
+  }
+  a {
+    text-decoration: none;
+  }
+  div {
+    width: 250px;
+  }
+  .header {
+    background-color: #E0E0F0;
+    color: #0F0F0F;
+    padding: 5px;
+    font-weight: bold;
+    font-size: 13pt;
+  }
+  .header-filter {
+    font-style: italic;
+    font-size: 10pt;
+  }
+  .item {
+    padding: 5px;
+  }
+  .odd {
+    background-color: #F0FFFF;
+  }
+  .item-title {
+  }
+  .item-detail {
+    font-style: italic;
+    color: #2020FF;
+  }
+  .item-date {
+    font-style: italic;
+  }
+  .item-challenge {
+    font-style: italic;
+    color: red;
+  }
+  .events {
+    padding-bottom: 10px;
+  }
+</style>
+</head>
+<body>
+    <script type="text/javascript">
+      var onopen = function() {
+        alert('opened');
+      };
+      var onclose = function() {
+        alert('closed');
+      };
+      var onerror = function(err) {
+        alert('error');                           
+      };
+      var onmessage = function(evt) {
+        alert(evt.data);
+      }
+      var channel = new goog.appengine.Channel('{{ token }}');
+      var handler = {
+                 'onopen': onopen,
+                 'onclose': onclose,
+                 'onerror': onerror,
+                 'onmessage': onmessage
+                 };
+      socket = channel.open(handler);
+    </script>
+  <div class='events'>
+    <div class='header'>
+      <span class='header-title'>Events near you</span>
+      <span class='header-filter'><a href=''>Filter</a></span>    
+    </div>
+    <div class='items'>
+      <div class='item even'>
+        <div class='item-title'>
+          <span class='item-name'><a href='http://www.buduracing.com/pdf/mt%20bike%20race%20flier%202011.pdf'>West Side Mt. Bike Series #1</a></span>
+          <span class='item-date'>February 20</span>
+        </div>
+        <div class='item-detail'>be the first Googler to sign up!</div>
+      </div>    
+      <div class='item odd'>
+        <div class='item-title'>
+          <span class='item-name'><a href='http://www.whidbeyislandmarathon.com/'>Whidbey Island Marathon</a></span>
+          <span class='item-date'>April 10</span>
+        </div>
+        <div class='item-detail'>4 Googlers are attending</div>
+      </div>    
+      <div class='item even'>
+        <div class='item-title'>
+          <span class='item-name'>Capitol City Marathon</span>
+          <span class='item-date'>May 15</span>
+        </div>
+        <div class='item-detail'>6 Googlers are attending</div>
+        <div class='item-challenge'>This event has a Googler Challenge!</div>
+      </div>    
+    </div>
+  </div>
+  <div class='activity'>
+    <div class='header'>
+      <span class='header-title'>Your friends' activities</span>
+      <span class='header-filter'><a href=''>Filter</a></span>    
+    </div>
+    <div class='items'>
+      <div class='item even'>
+        <div class='item-title'>
+          <span class='item-user'><a href='https://googlewho.appspot.com/skoga'>Shuichi</a><span>
+          <span class='item-name'>ran 4 miles</span>
+          <span class='item-date'>January 28</span>
+        </div>
+      </div>    
+    </div>
+    <div class='items'>
+      <div class='item odd'>
+        <div class='item-title'>
+          <span class='item-user'><a href='http://googlewho.appspot.com/scali'>Chris</a><span>
+          <span class='item-name'>ran 2 miles</span>
+          <span class='item-date'>January 28</span>
+        </div>
+      </div>    
+    </div>
+    <div class='items'>
+      <div class='item even'>
+        <div class='item-title'>
+          <span class='item-user'><a href='http://googlewho.appspot.com/levin'>David</a><span>
+          <span class='item-name'>ran 5 miles</span>
+          <span class='item-date'>January 27</span>
+        </div>
+      </div>    
+    </div>
+  </div>
+</body>
+</html>
