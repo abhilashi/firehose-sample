@@ -1,7 +1,11 @@
 import feedparser
 import logging
+import urllib
 import os
 
+from datetime import datetime
+from datetime import timedelta
+from django.utils import simplejson
 from google.appengine.api import channel
 from google.appengine.ext import db
 from google.appengine.api import memcache
@@ -23,7 +27,27 @@ class SubCallbackPage(webapp.RequestHandler):
 
   def post(self):
     feed = feedparser.parse(self.request.body)
-    channel.send_message('client', feed['entries'][0]['title'])
+    person_url = feed['entries'][0]['authors'][0]['href'] + '.json'
+    logging.debug("Person_url: %s" % person_url)
+    response = urlfetch.fetch(person_url)
+    logging.debug("Response (%d): %s" % (response.status_code, response.content))
+    if response.content:
+      person = simplejson.loads(response.content)
+      if 'location' not in person:
+        return
+      url = 'http://maps.googleapis.com/maps/api/geocode/json?%s' % urllib.urlencode({'address': person['location'], 'sensor': 'false'})
+      logging.debug(url)
+      response = urlfetch.fetch(url)
+      logging.debug("Response (%d): %s" % (response.status_code, response.content))
+      if response.content:
+        loc = simplejson.loads(response.content)
+        message = {
+          'entry': feed['entries'][0]['title'],
+          'person': person,
+          'latlng': loc['results'][0]['geometry']['location']
+          }
+        channel.send_message('client', simplejson.dumps(message))
+
     self.response.out.write('ok')
 
 
@@ -47,8 +71,14 @@ class SubscribePage(webapp.RequestHandler):
 
 class MainPage(webapp.RequestHandler):
   def get(self):
-    token = channel.create_channel('client')
-    logging.warning('Created token: %s' % token)
+    if 'token' in self.request.cookies:
+      token = self.request.cookies['token']
+      logging.debug('Using existing token: %s' % token)
+    else:
+      token = channel.create_channel('client')
+      expiration = (datetime.utcnow() + timedelta(hours=2)).strftime("%a, %d %b %Y %H:%M:%S GMT")
+      self.response.headers.add_header('Set-Cookie', 'token=%s; expires=%s' % (token, expiration))
+      logging.warning('Created token: %s, expires %s' % (token, expiration))
     path = os.path.join(os.path.dirname(__file__), 'index.html')
     self.response.out.write(template.render(path, {'token': token}));
 
