@@ -15,20 +15,19 @@ from google.appengine.ext.webapp import template
 from google.appengine.ext.webapp.util import run_wsgi_app
 
 
+TOPIC_URL = 'http://www.dailymile.com/entries.atom'
+
+
 class Client(db.Model):
-    name = db.StringProperty(required=True)
-    created = db.TimeProperty(required=True)
-    
+    created = db.DateTimeProperty(required=True, auto_now=True, auto_now_add=True)
+
     
 class People():
   def get_person(self, person_entry):
     person_url = person_entry['href']
-    logging.debug("Looking up %s" % person_url)
     person = memcache.get(person_url)
     if not person:
-      logging.debug("Memcache miss: person_url: %s" % person_url)
       response = urlfetch.fetch(person_url + '.json')
-      logging.debug("Response (%d): %s" % (response.status_code, response.content))
       if response.status_code != 200:
         return None
       
@@ -41,44 +40,78 @@ class Locations():
   MAP_URL_TEMPLATE = 'http://maps.googleapis.com/maps/api/geocode/json?%s'
   
   def get_latlong(self, location):
-    logging.debug("Looking up %s" % location)
     latlong = memcache.get(location)
     if not latlong:
-      logging.debug("Memcache miss: location: %s" % location)
+      if isinstance(location, unicode):
+        location = location.encode('utf-8')
       url = Locations.MAP_URL_TEMPLATE % urllib.urlencode({'address': location, 
                                                            'sensor': 'false'})
-      logging.debug(url)
       response = urlfetch.fetch(url)
-      logging.debug("Response (%d): %s" % (response.status_code, response.content))
       if response.status_code != 200:
         return None      
       geocode_data = simplejson.loads(response.content)
       if geocode_data['status'] == 'OK':
         latlong = geocode_data['results'][0]['geometry']['location']
-        logging.debug("Caching: %s, %s" % (location, latlong))  
         memcache.add(location, latlong)
     return latlong
   
   
-class Clients():
-  def update_clients(self, entries):
+class Messages():
+  def messages_from_entries(self, entries, use_cache):
     messages = []
     for entry in entries:
+      if use_cache and memcache.get(entry['id']):
+        continue
+
+      if use_cache: 
+        memcache.add(entry['id'], 'seen')
+        
       person = People().get_person(entry['authors'][0])        
       if person and 'location' in person:
-        logging.debug("Looking up latlong for %s" % person['location'])
         latlong = Locations().get_latlong(person['location'])
       else:
-        logging.debug("Skipping latlong lookup")
         latlong = None
       messages.append({
         'entry': entry['title'],
-        'entry-content': entry['content'][0]['value'],
-        'person': person,
+#        'entry-content': entry['content'][0]['value'],
+        'photo-url': '',
         'latlng': latlong,
         'id': entry['id']
         })
-    channel.send_message('client', simplejson.dumps(messages))
+    return messages    
+  
+  def get_initial_messages(self, mock=False):
+    if mock:
+      feed = feedparser.parse(MOCK_FEED)
+    else:
+      result = urlfetch.fetch(TOPIC_URL)
+      if result.status_code == 200:
+        feed = feedparser.parse(result.content)
+    if feed:
+      return self.messages_from_entries(feed['entries'], False)
+    else:
+      return []
+  
+  
+class Clients():
+  def add_client(self):
+    client = Client()
+    db.put(client)
+    logging.warning(client.created)
+    return channel.create_channel('client')
+
+  def broadcast_message(self, message):
+    logging.debug('sending (%s) to client (%s)' % (message, 'client'))
+    channel.send_message('client', message)
+
+  def update_clients(self, text, use_cache=True, client=None):
+    feed = feedparser.parse(text)
+    entries = feed['entries']
+    messages = Messages().messages_from_entries(entries, use_cache)
+    if client:
+      channel.send_message(client, simplejson.dumps(messages))
+    else:
+      self.broadcast_message(simplejson.dumps(messages))
 
 
 class SubCallbackPage(webapp.RequestHandler):
@@ -87,15 +120,13 @@ class SubCallbackPage(webapp.RequestHandler):
       self.response.out.write(self.request.get('hub.challenge'))
 
   def post(self):
-    feed = feedparser.parse(self.request.body)
-    Clients().update_clients(feed['entries'])
+    Clients().update_clients(text)
     self.response.out.write('ok')
     
 class MockPage(webapp.RequestHandler):
   def get(self):
     # for dev appserver, make sure the channel's created and not just re-using
     # a token from a cookie.
-    channel.create_channel('client')
     feed = feedparser.parse(MOCK_FEED)
     Clients().update_clients(feed['entries'])
     self.response.out.write(len(feed['entries']))
@@ -105,7 +136,7 @@ class SubscribePage(webapp.RequestHandler):
     post_fields = {
       'hub.callback': 'http://firehose-sample.appspot.com/subcb?url=http://www.dailymile.com/entries.atom',
       'hub.mode': 'subscribe',
-      'hub.topic': 'http://www.dailymile.com/entries.atom',
+      'hub.topic': TOPIC_URL,
       'hub.verify': 'async',
       'hub.verify_token': 'tokentokentoken'
     }
@@ -118,23 +149,34 @@ class SubscribePage(webapp.RequestHandler):
 #    self.response.out.write(template.render(path, {}))
 
 
+class GetSeedMessages(webapp.RequestHandler):
+  def post(self):
+    messages = simplejson.dumps(Messages().get_initial_messages(self.request.get('mock') == '1'))
+    memcache.add('initial_messages', initial_messages, 60)
+    self.response.out.write(messages)
+
+
 class MainPage(webapp.RequestHandler):
   def get(self):
-    if 'token' in self.request.cookies:
+    if (not self.request.get('nt')) and ('token' in self.request.cookies):
       token = self.request.cookies['token']
-      logging.debug('Using existing token: %s' % token)
     else:
-      token = channel.create_channel('client')
+      token = Clients().add_client()
       expiration = (datetime.utcnow() + timedelta(hours=2)).strftime("%a, %d %b %Y %H:%M:%S GMT")
       self.response.headers.add_header('Set-Cookie', 'token=%s; expires=%s' % (token, expiration))
       logging.warning('Created token: %s, expires %s' % (token, expiration))
+
+    initial_messages = memcache.get('initial_messages')
+    if not initial_messages:
+      initial_messages = '[]'
     path = os.path.join(os.path.dirname(__file__), 'index.html')
-    self.response.out.write(template.render(path, {'token': token}));
+    self.response.out.write(template.render(path, {'token': token, 'initial_messages': initial_messages}));
 
 
 application = webapp.WSGIApplication(
         [('/', MainPage),
          ('/mock', MockPage),
+         ('/seed', GetSeedMessages),
          ('/sub', SubscribePage),
          ('/subcb', SubCallbackPage)],
         debug=True)
