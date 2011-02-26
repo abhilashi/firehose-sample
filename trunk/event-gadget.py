@@ -120,7 +120,7 @@ class SubCallbackPage(webapp.RequestHandler):
       self.response.out.write(self.request.get('hub.challenge'))
 
   def post(self):
-    Clients().update_clients(text)
+    Clients().update_clients(self.request.body)
     self.response.out.write('ok')
     
 class MockPage(webapp.RequestHandler):
