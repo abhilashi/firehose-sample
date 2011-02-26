@@ -45,6 +45,20 @@
   .events {
     padding-bottom: 10px;
   }
+  
+  .infoparent {
+    width: 250px;
+  }
+  
+  .infopic {
+    float: left;
+    width: 50px;
+  }
+  
+  .infotext {
+    float: right;
+    width: 200px;
+  }
 </style>
 <meta name="viewport" content="initial-scale=1.0, user-scalable=no" />
 <style type="text/css">
@@ -56,42 +70,79 @@
     src="http://maps.google.com/maps/api/js?sensor=false">
 </script>
 <script type="text/javascript">
+  var known_entries = {};
+  var map = undefined;
+  var infoWindow = undefined;
+  
   function initialize() {
-    var latlng = new google.maps.LatLng(-34.397, 150.644);
+    var latlng = new google.maps.LatLng(47.5, -122.2);
     var myOptions = {
-      zoom: 8,
+      zoom: 2,
       center: latlng,
       mapTypeId: google.maps.MapTypeId.ROADMAP
     };
-    var map = new google.maps.Map(document.getElementById("map_canvas"),
+    map = new google.maps.Map(document.getElementById("map_canvas"),
         myOptions);
   }
+  
+  function makeInfoWindowContent(msg) {
+    return "<div class='infoparent'><div class='infopic'><img src='" + 
+        msg['person']['photo_url'] + "'></div>" +
+        "<div class='infotext'>" +
+        msg['entry-content'] +
+        "</div></div>"
+  }
 
+  var onopen = function() {
+  };
+  var onclose = function() {
+  };
+  var onerror = function(err) {
+  };
+  var onmessage = function(evt) {
+    var msgs = JSON.parse(evt.data);
+    for (var i = 0; i < msgs.length; i++) {
+      msg = msgs[i];
+      if (!known_entries[msg['id']]) {
+        if (msg['latlng']) {
+          var latlng = new google.maps.LatLng(msg['latlng']['lat'], msg['latlng']['lng']);
+          var marker = new google.maps.Marker({
+              position: latlng, 
+              map: map,
+              title:msg['entry'],
+              animation: google.maps.Animation.DROP
+          });
+          if (infoWindow) {
+            infoWindow.close();
+          }
+          content = makeInfoWindowContent(msg);
+          infoWindow = new google.maps.InfoWindow({
+              position: latlng,
+              content: content
+          });
+//          infoWindow.open(map, marker);
+          known_entries[msg['id']] = 1;
+          document.getElementById('first-activity').innerHTML += '<div>' + msg['entry'] + '</div>';
+        }
+      } else {
+        document.getElementById('first-activity').innerHTML += '.';
+      }
+    }
+  }
 </script>
 </head>
 <body onload="initialize()">
+<script type="text/javascript">
+  var channel = new goog.appengine.Channel('{{ token }}');
+  var handler = {
+             'onopen': onopen,
+             'onclose': onclose,
+             'onerror': onerror,
+             'onmessage': onmessage
+             };
+  var socket = channel.open(handler);
+</script>
 <div id="map_canvas" style="width:100%; height:100%"></div>
-    <script type="text/javascript">
-      var onopen = function() {
-      };
-      var onclose = function() {
-      };
-      var onerror = function(err) {
-      };
-      var onmessage = function(evt) {
-        var msg = evt.data;
-        var new_item = msg;
-        document.getElementById('activity-items').innerHTML = new_item;
-      }
-      var channel = new goog.appengine.Channel('{{ token }}');
-      var handler = {
-                 'onopen': onopen,
-                 'onclose': onclose,
-                 'onerror': onerror,
-                 'onmessage': onmessage
-                 };
-      socket = channel.open(handler);
-    </script>
   <div class='events'>
     <div class='header'>
       <span class='header-title'>Events near you</span>
@@ -128,7 +179,7 @@
       <span class='header-filter'><a href=''>Filter</a></span>    
     </div>
     <div class='items' id='activity-items'>
-      <div class='item even'>
+      <div class='item even' id='first-activity'>
         <div class='item-title'>
           <span class='item-user'><a href='https://googlewho.appspot.com/skoga'>Shuichi</a><span>
           <span class='item-name'>ran 4 miles</span>
