@@ -16,15 +16,14 @@ from google.appengine.ext.webapp.util import run_wsgi_app
 
 
 TOPIC_URL = 'http://www.dailymile.com/entries.atom'
-
+TOKEN_EXPIRATION = timedelta(hours = 2)
 
 class Client(db.Model):
-    created = db.DateTimeProperty(required=True, auto_now=True, auto_now_add=True)
+    created = db.DateTimeProperty(required=True, auto_now_add=True)
 
     
 class People():
-  def get_person(self, person_entry):
-    person_url = person_entry['href']
+  def get_person(self, person_url):
     person = memcache.get(person_url)
     if not person:
       response = urlfetch.fetch(person_url + '.json')
@@ -60,21 +59,30 @@ class Messages():
   def messages_from_entries(self, entries, use_cache):
     messages = []
     for entry in entries:
-      if use_cache and memcache.get(entry['id']):
+      if entry.tags[0].term != 'http://schemas.dailymile.com/entry#workout':
         continue
 
+      if use_cache and memcache.get(entry.id):
+        continue
+      
       if use_cache: 
-        memcache.add(entry['id'], 'seen')
+        memcache.add(entry.id, 'seen')
         
-      person = People().get_person(entry['authors'][0])        
+      person = People().get_person(entry.author_detail.href)        
       if person and 'location' in person:
         latlong = Locations().get_latlong(person['location'])
       else:
         latlong = None
+      
       messages.append({
         'entry': entry['title'],
-#        'entry-content': entry['content'][0]['value'],
-        'photo-url': '',
+        'item': {
+          'person_url': entry.author_detail.href,
+          'person_name':  entry.author_detail.name,
+          'title': entry.title_detail.value,
+          'url': entry.links[0].href,
+          'img': entry.links[2].href,          
+         },
         'latlng': latlong,
         'id': entry['id']
         })
@@ -97,12 +105,18 @@ class Clients():
   def add_client(self):
     client = Client()
     db.put(client)
-    logging.warning(client.created)
-    return channel.create_channel('client')
+    logging.warning('Created new client %s' % client.created)
+    return (str(client.created), channel.create_channel(str(client.created)))
 
   def broadcast_message(self, message):
-    logging.debug('sending (%s) to client (%s)' % (message, 'client'))
-    channel.send_message('client', message)
+    q = Client.all()
+    for client in q:
+      if datetime.utcnow() - client.created > TOKEN_EXPIRATION:
+        logging.debug('Removing expired client: %s' % str(client.created))
+        client.delete()
+      else:
+        logging.debug('sending (%s) to client (%s)' % (message, str(client.created)))
+        channel.send_message(str(client.created), message)
 
   def update_clients(self, text, use_cache=True, client=None):
     feed = feedparser.parse(text)
@@ -122,6 +136,7 @@ class SubCallbackPage(webapp.RequestHandler):
   def post(self):
     Clients().update_clients(self.request.body)
     self.response.out.write('ok')
+
     
 class MockPage(webapp.RequestHandler):
   def get(self):
@@ -130,6 +145,7 @@ class MockPage(webapp.RequestHandler):
     feed = feedparser.parse(MOCK_FEED)
     Clients().update_clients(feed['entries'])
     self.response.out.write(len(feed['entries']))
+
 
 class SubscribePage(webapp.RequestHandler):
   def get(self):
@@ -144,16 +160,13 @@ class SubscribePage(webapp.RequestHandler):
     result = urlfetch.fetch (url, payload=post_fields)
     self.response.out.write(result.status_code)
     self.response.out.write(result.content)
-#    path = os.path.join(os.path.dirname(__file__), 'index.html')
-#    self.response.headers['Content-Type'] = 'text/html'
-#    self.response.out.write(template.render(path, {}))
 
 
 class GetSeedMessages(webapp.RequestHandler):
   def post(self):
     messages = simplejson.dumps(Messages().get_initial_messages(self.request.get('mock') == '1'))
-    memcache.add('initial_messages', initial_messages, 60)
-    self.response.out.write(messages)
+    memcache.add('initial_messages', messages, 60)
+    Clients().broadcast_message(messages)
 
 
 class MainPage(webapp.RequestHandler):
@@ -161,9 +174,10 @@ class MainPage(webapp.RequestHandler):
     if (not self.request.get('nt')) and ('token' in self.request.cookies):
       token = self.request.cookies['token']
     else:
-      token = Clients().add_client()
+      (cid, token) = Clients().add_client()
       expiration = (datetime.utcnow() + timedelta(hours=2)).strftime("%a, %d %b %Y %H:%M:%S GMT")
       self.response.headers.add_header('Set-Cookie', 'token=%s; expires=%s' % (token, expiration))
+      self.response.headers.add_header('Set-Cookie', 'cid=%s; expires=%s' % (cid, expiration))
       logging.warning('Created token: %s, expires %s' % (token, expiration))
 
     initial_messages = memcache.get('initial_messages')
