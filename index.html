@@ -1,173 +1,236 @@
 <!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Transitional//EN" "DTD/xhtml1-transitional.dtd">
 <html>
 <head>
+  <meta name="viewport" content="initial-scale=1.0, user-scalable=no" />
   <script type="text/javascript" src="/_ah/channel/jsapi"></script>
-<style type="text/css">
-  body {
-    font-family: sans-serif;
-    font-size: 10pt;
-  }
-  a {
-    text-decoration: none;
-  }
-  div {
-    width: 250px;
-  }
-  .header {
-    background-color: #E0E0F0;
-    color: #0F0F0F;
-    padding: 5px;
-    font-weight: bold;
-    font-size: 13pt;
-  }
-  .header-filter {
-    font-style: italic;
-    font-size: 10pt;
-  }
-  .item {
-    padding: 5px;
-  }
-  .odd {
-    background-color: #F0FFFF;
-  }
-  .item-title {
-  }
-  .item-detail {
-    font-style: italic;
-    color: #2020FF;
-  }
-  .item-date {
-    font-style: italic;
-  }
-  .item-challenge {
-    font-style: italic;
-    color: red;
-  }
-  .events {
-    padding-bottom: 10px;
-  }
-  
-  .infoparent {
-    width: 250px;
-  }
-  
-  .infopic {
-    float: left;
-    width: 50px;
-  }
-  
-  .infotext {
-    float: right;
-    width: 200px;
-  }
-</style>
-<meta name="viewport" content="initial-scale=1.0, user-scalable=no" />
-<style type="text/css">
-  html { height: 100% }
-  body { height: 100%; margin: 0px; padding: 0px }
-  #map_canvas { 
-  	width: 1024px; 
-  	height: 512px; 
-  }
-</style>
-<script type="text/javascript"
-    src="http://maps.google.com/maps/api/js?sensor=false">
-</script>
-<script type="text/javascript">
-  var known_entries = {};
-  var last_latlng = [];
-  var map = undefined;
-  var infoWindow = undefined;
-  
-  function initialize() {
-    var latlng = new google.maps.LatLng(47.7, -122.2);
-    var myOptions = {
-      disableDefaultUI: true,
-      mapTypeControl: false,
-      panControl: false,
-      streetViewControl: false,
-      zoom: 6,
-      center: latlng,
-      mapTypeId: google.maps.MapTypeId.ROADMAP
-    };
-    map = new google.maps.Map(document.getElementById("map_canvas"),
-        myOptions);
-    google.maps.event.addListener(map, 'tilesloaded', function() {
-      onmessage({'data': '{{ initial_messages }}'});
-    });
-  }
-  
-  function makeInfoWindowContent(msg) {
-    return "<div class='infoparent'><div class='infopic'><img src='" + 
-        msg['photo_url'] + "'></div>" +
-        "<div class='infotext'>" +
-//        msg['entry-content'] +
-        "</div></div>"
-  }
-
-  var onopen = function() {
-  };
-  var onclose = function() {
-  };
-  var onerror = function(err) {
-  };
-  var onmessage = function(evt) {
-    var msgs = JSON.parse(evt.data);
-    for (var i = 0; i < msgs.length; i++) {
-      msg = msgs[i];
-      if (!known_entries[msg['id']]) {
+  <style type="text/css">
+    html { 
+      height: 100% 
+    }
+    body {
+      height: 100%; 
+      margin: 0px; 
+      padding: 0px; 
+      font-family: sans-serif;
+      font-size: 10pt;
+    }
+    #map_canvas { 
+      width: 768px; 
+      height: 384px;
+      float: left; 
+    }
+    #eventlist {
+      width: 250px;
+      height: 384px;
+      float: right;
+      overflow: hidden;
+    }
+    a {
+      text-decoration: none;
+    }
+    div {
+      width: 250px;
+    }
+    .header {
+      background-color: #E0E0F0;
+      color: #0F0F0F;
+      padding: 5px;
+      font-weight: bold;
+      font-size: 13pt;
+    }
+    .header-filter {
+      font-style: italic;
+      font-size: 10pt;
+    }
+    .item {
+      padding: 5px;
+      height: 55px;
+    }
+    .odd {
+      background-color: #F0FFFF;
+    }
+    .item-picture {
+      float: left;
+      width: 50px;
+    }
+    .item-description {
+      width: 200px;
+      float: right
+    }
+    .item-detail {
+      font-style: italic;
+      color: #2020FF;
+    }
+    .item-date {
+      font-style: italic;
+    }
+    .item-challenge {
+      font-style: italic;
+      color: red;
+    }
+    .events {
+      padding-bottom: 10px;
+    }
+    
+    .infoparent {
+      width: 250px;
+    }
+    
+    .infopic {
+      float: left;
+      width: 50px;
+    }
+    
+    .infotext {
+      float: right;
+      width: 200px;
+    }
+  </style>
+  <script type="text/javascript"
+      src="http://maps.google.com/maps/api/js?sensor=false">
+  </script>
+  <script type="text/javascript">
+    var known_entries = {};
+    var last_latlng = [];
+    var map = undefined;
+    var infoWindow = undefined;
+    var initialMessages = '{{ initial_messages }}';
+    var item_count = 0;
+    var messages = [];
+    
+    function initialize() {
+      var latlng = new google.maps.LatLng(47.7, -122.2);
+      var myOptions = {
+        disableDefaultUI: true,
+        mapTypeControl: false,
+        panControl: false,
+        streetViewControl: false,
+        zoom: 6,
+        center: latlng,
+        mapTypeId: google.maps.MapTypeId.ROADMAP
+      };
+      map = new google.maps.Map(document.getElementById("map_canvas"),
+          myOptions);
+      google.maps.event.addListener(map, 'tilesloaded', function() {
+        onmessage({'data': initialMessages});
+      });
+    }
+    
+    function makeInfoWindowContent(msg) {
+      return "<div class='infoparent'><div class='infopic'><img src='" + 
+          msg['photo_url'] + "'></div>" +
+          "<div class='infotext'>" +
+  //        msg['entry-content'] +
+          "</div></div>"
+    }
+    
+    function addActivityItem(msg) {
+      var even_or_odd;
+      if (item_count % 2 == 0) {
+        even_or_odd = 'even';
+      } else {
+        even_or_odd = 'odd';
+      }
+      item_count = (item_count + 1) % 10;
+      
+      item_id = 'item-' + item_count;
+      
+      var template =
+          "<div class='items' id='" + item_id + "'>"+
+            "<div class='item " + even_or_odd + "'>" +
+              "<div class='item-picture'>" +
+                "<img src='" + msg['item']['img'] + "'>" +
+              "</div>" +
+              "<div class='item-description'>" +
+//                "<span class='item-user'><a href='" + msg['item']['person_url'] + "'>" + msg['item']['person_name'] + "</a><span>" +
+                "<span class='item-name'><a href='" + msg['item']['url'] + "'>" + msg['item']['title'] + "</span>" +
+              "</div>" +
+            "</div>" +    
+          "</div>";
+      old_item = document.getElementById(item_id);
+      if (old_item) {
+        old_item.parentNode.removeChild(old_item);
+      }
+      setTimeout(function() {
+          currHtml = document.getElementById('activity_items').innerHTML;
+          document.getElementById('activity_items').innerHTML = template + currHtml;
+        }, 100);
+    }
+    
+    function fitBounds() {
+//      last_latlng = last_latlng.slice(0, 10);
+      var needs_resize = false;
+      for (i = 0; i < last_latlng.length; i++) {
+        if (!map.getBounds().contains(last_latlng[i])) {
+          needs_resize = true;
+          break;
+        }
+      }
+      if (needs_resize) {
+        // if there's only one coordinate, just pan
+        if (last_latlng.length == 1) {
+          map.panTo(last_latlng[0]);
+          return;
+        }
+        var min_lat = 180;
+        var max_lat = -180;
+        var min_lng = 180;
+        var max_lng = -180;
+        for (i = 0; i < last_latlng.length; i++) {
+          min_lat = Math.min(min_lat, last_latlng[i].lat());
+          max_lat = Math.max(max_lat, last_latlng[i].lat());
+          min_lng = Math.min(min_lng, last_latlng[i].lng());
+          max_lng = Math.max(max_lng, last_latlng[i].lng());
+        }
+            
+        var ul = new google.maps.LatLng(min_lat, min_lng);
+        var lr = new google.maps.LatLng(max_lat, max_lng);
+        var bounds = new google.maps.LatLngBounds(ul, lr);
+        map.fitBounds(bounds);
+      }
+    }
+    
+    function processMessages() {
+      msg = messages.pop();
+      if (msg && !known_entries[msg['id']]) {
         if (msg['latlng']) {
           var latlng = new google.maps.LatLng(msg['latlng']['lat'], msg['latlng']['lng']);
-	      last_latlng.push(latlng);
-          var marker = new google.maps.Marker({
+        last_latlng = [latlng];
+//        last_latlng.push(latlng);
+        var marker = new google.maps.Marker({
               position: latlng, 
               map: map,
               title:msg['entry'],
               animation: google.maps.Animation.DROP
           });
-          if (infoWindow) {
-            infoWindow.close();
-          }
-          content = makeInfoWindowContent(msg);
-          infoWindow = new google.maps.InfoWindow({
-              position: latlng,
-              content: content
-          });
-//          infoWindow.open(map, marker);
           known_entries[msg['id']] = 1;
-          document.getElementById('first-activity').innerHTML += '<div>' + msg['entry'] + '</div>';
+          addActivityItem(msg);
         }
-      } else {
-        document.getElementById('first-activity').innerHTML += '.';
+        fitBounds();
+      }
+      
+      if (messages.length > 0) {
+        setTimeout(function() {processMessages();}, 500);
       }
     }
-    last_latlng = last_latlng.slice(0, 10);    
-    var needs_resize = false;
-    for (i = 0; i < last_latlng.length; i++) {
-      if (!map.getBounds().contains(last_latlng[i])) {
-        needs_resize = true;
-        break;
+  
+    var onopen = function() {
+      // if we didn't get any initial messages, ask for them.
+      if (JSON.parse(initialMessages).length == 0) {
+        var xhr = new XMLHttpRequest();
+        xhr.open('POST', '/seed', true);
+        xhr.send();  
       }
+    };
+    var onclose = function() {
+    };
+    var onerror = function(err) {
+    };
+    var onmessage = function(evt) {
+      messages = messages.concat(JSON.parse(evt.data));
+      setTimeout(function() {processMessages();}, 500);
     }
-    if (needs_resize) {
-      var min_lat = 180;
-      var max_lat = -180;
-      var min_lng = 180;
-      var max_lng = -180;
-      for (i = 0; i < last_latlng.length; i++) {
-        min_lat = Math.min(min_lat, last_latlng[i].lat());
-        max_lat = Math.max(max_lat, last_latlng[i].lat());
-        min_lng = Math.min(min_lng, last_latlng[i].lng());
-        max_lng = Math.max(max_lng, last_latlng[i].lng());
-      }
-          
-      var ul = new google.maps.LatLng(min_lat, min_lng);
-      var lr = new google.maps.LatLng(max_lat, max_lng);
-	  var bounds = new google.maps.LatLngBounds(ul, lr);
-      map.fitBounds(bounds);
-    }
-  }
-</script>
+  </script>
 </head>
 <body onload="initialize()">
 <script type="text/javascript">
@@ -180,69 +243,20 @@
              };
   var socket = channel.open(handler);
 </script>
-<div id = 'center'>nothing yet</div>
-<div id='map_canvas'></div>
-  <div class='events'>
-    <div class='header'>
-      <span class='header-title'>Events near you</span>
-      <span class='header-filter'><a href=''>Filter</a></span>    
+  <div id='container' style='width: 1024px; margin-left: auto; margin-right: auto'>
+    <div id='title' style='width: 100%; padding-bottom:20px; padding-top:20px'>
+      <span style='font-size:20pt'>DailyMile Firehose -> PubSubHubbub -> App Engine Sample</span>
+      </span>
     </div>
-    <div class='items'>
-      <div class='item even'>
-        <div class='item-title'>
-          <span class='item-name'><a href='http://www.buduracing.com/pdf/mt%20bike%20race%20flier%202011.pdf'>West Side Mt. Bike Series #1</a></span>
-          <span class='item-date'>February 20</span>
+    <div id='map_canvas'></div>
+    <div id='eventlist'>
+      <div class='activity'>
+        <div id='activity_items' class='items'>
         </div>
-        <div class='item-detail'>be the first Googler to sign up!</div>
-      </div>    
-      <div class='item odd'>
-        <div class='item-title'>
-          <span class='item-name'><a href='http://www.whidbeyislandmarathon.com/'>Whidbey Island Marathon</a></span>
-          <span class='item-date'>April 10</span>
-        </div>
-        <div class='item-detail'>4 Googlers are attending</div>
-      </div>    
-      <div class='item even'>
-        <div class='item-title'>
-          <span class='item-name'>Capitol City Marathon</span>
-          <span class='item-date'>May 15</span>
-        </div>
-        <div class='item-detail'>6 Googlers are attending</div>
-        <div class='item-challenge'>This event has a Googler Challenge!</div>
-      </div>    
+      </div>
     </div>
-  </div>
-  <div class='activity'>
-    <div class='header'>
-      <span class='header-title'>Your friends' activities</span>
-      <span class='header-filter'><a href=''>Filter</a></span>    
-    </div>
-    <div class='items' id='activity-items'>
-      <div class='item even' id='first-activity'>
-        <div class='item-title'>
-          <span class='item-user'><a href='https://googlewho.appspot.com/skoga'>Shuichi</a><span>
-          <span class='item-name'>ran 4 miles</span>
-          <span class='item-date'>January 28</span>
-        </div>
-      </div>    
-    </div>
-    <div class='items'>
-      <div class='item odd'>
-        <div class='item-title'>
-          <span class='item-user'><a href='http://googlewho.appspot.com/scali'>Chris</a><span>
-          <span class='item-name'>ran 2 miles</span>
-          <span class='item-date'>January 28</span>
-        </div>
-      </div>    
-    </div>
-    <div class='items'>
-      <div class='item even'>
-        <div class='item-title'>
-          <span class='item-user'><a href='http://googlewho.appspot.com/levin'>David</a><span>
-          <span class='item-name'>ran 5 miles</span>
-          <span class='item-date'>January 27</span>
-        </div>
-      </div>    
+    <div id='footer' style='padding-top:20px; float: left'>
+      <a href='mailto:moishel@gmail.com'>contact</a> | <a href='http://code.google.com/p/firehose-sample/'>code</a>
     </div>
   </div>
 </body>
