@@ -94,9 +94,9 @@
     var last_latlng = [];
     var map = undefined;
     var infoWindow = undefined;
-    var initialMessages = '{{ initial_messages }}';
     var item_count = 0;
-    var messages = [];
+    var messages = JSON.parse('{{ initial_messages }}');
+    var initialMessagesCount = messages.length;
     
     function initialize() {
       var latlng = new google.maps.LatLng(47.7, -122.2);
@@ -111,8 +111,9 @@
       };
       map = new google.maps.Map(document.getElementById("map_canvas"),
           myOptions);
-      google.maps.event.addListener(map, 'tilesloaded', function() {
-        onmessage({'data': initialMessages});
+      listener = google.maps.event.addListener(map, 'tilesloaded', function() {
+        setInterval(processMessages, 1000);
+        google.maps.event.removeListener(listener);
       });
     }
     
@@ -120,7 +121,7 @@
       return "<div class='infoparent'><div class='infopic'><img src='" + 
           msg['photo_url'] + "'></div>" +
           "<div class='infotext'>" +
-  //        msg['entry-content'] +
+          msg['entry-content'] +
           "</div></div>"
     }
     
@@ -191,36 +192,34 @@
     }
     
     function processMessages() {
+      if (messages.length == 0) {
+        return;
+      }
       msg = messages.pop();
       if (msg && !known_entries[msg['id']]) {
         if (msg['latlng']) {
           var latlng = new google.maps.LatLng(msg['latlng']['lat'], msg['latlng']['lng']);
-        last_latlng = [latlng];
-//        last_latlng.push(latlng);
-        var marker = new google.maps.Marker({
-              position: latlng, 
-              map: map,
-              title:msg['entry'],
-              animation: google.maps.Animation.DROP
-          });
+          last_latlng = [latlng];
+          var marker = new google.maps.Marker({
+                position: latlng, 
+                map: map,
+                title:msg['entry'],
+                animation: google.maps.Animation.DROP
+            });
           known_entries[msg['id']] = 1;
-          addActivityItem(msg);
+          fitBounds();
         }
-        fitBounds();
-      }
-      
-      if (messages.length > 0) {
-        setTimeout(function() {processMessages();}, 500);
+        addActivityItem(msg);
       }
     }
   
     var onopen = function() {
       // if we didn't get any initial messages, ask for them.
-      if (JSON.parse(initialMessages).length == 0) {
+      if (initialMessagesCount == 0) {
         var xhr = new XMLHttpRequest();
         xhr.open('POST', '/seed', true);
         xhr.send();  
-      }
+      }      
     };
     var onclose = function() {
     };
@@ -228,7 +227,6 @@
     };
     var onmessage = function(evt) {
       messages = messages.concat(JSON.parse(evt.data));
-      setTimeout(function() {processMessages();}, 500);
     }
   </script>
 </head>
@@ -256,7 +254,9 @@
       </div>
     </div>
     <div id='footer' style='padding-top:20px; float: left'>
-      <a href='mailto:moishel@gmail.com'>contact</a> | <a href='http://code.google.com/p/firehose-sample/'>code</a>
+      <a href='http://www.dailymile.com/people/moishe'>dailymile</a> | 
+      <a href='mailto:moishel@gmail.com'>contact</a> | 
+      <a href='http://code.google.com/p/firehose-sample/'>code</a>
     </div>
   </div>
 </body>
