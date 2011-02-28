@@ -56,18 +56,12 @@ class Locations():
   
   
 class Messages():
-  def messages_from_entries(self, entries, use_cache):
+  def messages_from_entries(self, entries):
     messages = []
     for entry in entries:
       if entry.tags[0].term != 'http://schemas.dailymile.com/entry#workout':
         continue
 
-      if use_cache and memcache.get(entry.id):
-        continue
-      
-      if use_cache: 
-        memcache.add(entry.id, 'seen')
-        
       person = People().get_person(entry.author_detail.href)        
       if person and 'location' in person:
         latlong = Locations().get_latlong(person['location'])
@@ -96,7 +90,7 @@ class Messages():
       if result.status_code == 200:
         feed = feedparser.parse(result.content)
     if feed:
-      return self.messages_from_entries(feed['entries'], False)
+      return self.messages_from_entries(feed['entries'])
     else:
       return []
   
@@ -107,25 +101,39 @@ class Clients():
     db.put(client)
     logging.warning('Created new client %s' % client.created)
     return (str(client.created), channel.create_channel(str(client.created)))
+  
+  def send_filtered_messages(self, clientid, messages):
+    messages_to_send = []
+    for message in messages:
+      id = clientid + message['id']
+      if memcache.get(id):
+        continue
+      
+      memcache.add(id, 's')
+      messages_to_send.append(message)
+      
+    if len(messages_to_send):
+      message = simplejson.dumps(messages_to_send);
+      logging.debug("Sending (%s): %s" % (clientid, message))
+      channel.send_message(clientid, message)
 
-  def broadcast_message(self, message):
+  def broadcast_messages(self, messages):
     q = Client.all()
     for client in q:
       if datetime.utcnow() - client.created > TOKEN_EXPIRATION:
         logging.debug('Removing expired client: %s' % str(client.created))
         client.delete()
       else:
-        logging.debug('sending (%s) to client (%s)' % (message, str(client.created)))
-        channel.send_message(str(client.created), message)
+        self.send_filtered_messages(str(client.created), messages)
 
-  def update_clients(self, text, use_cache=True, client=None):
+  def update_clients(self, text, client=None):
     feed = feedparser.parse(text)
     entries = feed['entries']
-    messages = Messages().messages_from_entries(entries, use_cache)
+    messages = Messages().messages_from_entries(entries)
     if client:
       channel.send_message(client, simplejson.dumps(messages))
     else:
-      self.broadcast_message(simplejson.dumps(messages))
+      self.broadcast_messages(messages)
 
 
 class SubCallbackPage(webapp.RequestHandler):
@@ -164,9 +172,9 @@ class SubscribePage(webapp.RequestHandler):
 
 class GetSeedMessages(webapp.RequestHandler):
   def post(self):
-    messages = simplejson.dumps(Messages().get_initial_messages(self.request.get('mock') == '1'))
-    memcache.add('initial_messages', messages, 60)
-    Clients().broadcast_message(messages)
+    messages = Messages().get_initial_messages(self.request.get('mock') == '1')
+    memcache.add('initial_messages', simplejson.dumps(messages), 60)
+    Clients().broadcast_messages(messages)
 
 
 class MainPage(webapp.RequestHandler):
