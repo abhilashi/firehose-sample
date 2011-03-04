@@ -80,20 +80,16 @@ class Messages():
         'latlng': latlong,
         'id': entry['id']
         })
+      
+    memcache.set('latest-unfiltered-messages', messages)
     return messages    
   
-  def get_initial_messages(self, mock=False):
-    if mock:
-      feed = feedparser.parse(MOCK_FEED)
-    else:
-      result = urlfetch.fetch(TOPIC_URL)
-      if result.status_code == 200:
-        feed = feedparser.parse(result.content)
-    if feed:
-      return self.messages_from_entries(feed['entries'])
-    else:
-      return []
+  def get_initial_messages(self):
+    return simplejson.dumps(memcache.get('latest-unfiltered-messages') or [])
   
+  def get_mock_messages(self):
+    return simplejson.dumps(self.messages_from_entries(feedparser.parse(MOCK_FEED)['entries']))
+
   
 class Clients():
   def add_client(self):
@@ -146,15 +142,6 @@ class SubCallbackPage(webapp.RequestHandler):
     self.response.out.write('ok')
 
     
-class MockPage(webapp.RequestHandler):
-  def get(self):
-    # for dev appserver, make sure the channel's created and not just re-using
-    # a token from a cookie.
-    feed = feedparser.parse(MOCK_FEED)
-    Clients().update_clients(feed['entries'])
-    self.response.out.write(len(feed['entries']))
-
-
 class SubscribePage(webapp.RequestHandler):
   def get(self):
     post_fields = {
@@ -170,13 +157,6 @@ class SubscribePage(webapp.RequestHandler):
     self.response.out.write(result.content)
 
 
-class GetSeedMessages(webapp.RequestHandler):
-  def post(self):
-    messages = Messages().get_initial_messages(self.request.get('mock') == '1')
-    memcache.add('initial_messages', simplejson.dumps(messages), 60)
-    Clients().broadcast_messages(messages)
-
-
 class MainPage(webapp.RequestHandler):
   def get(self):
     if (not self.request.get('nt')) and ('token' in self.request.cookies):
@@ -187,8 +167,12 @@ class MainPage(webapp.RequestHandler):
       self.response.headers.add_header('Set-Cookie', 'token=%s; expires=%s' % (token, expiration))
       self.response.headers.add_header('Set-Cookie', 'cid=%s; expires=%s' % (cid, expiration))
       logging.warning('Created token: %s, expires %s' % (token, expiration))
+      
+    if self.request.get('mock'):
+      initial_messages = Messages().get_mock_messages()
+    else:
+      initial_messages = Messages().get_initial_messages()
 
-    initial_messages = memcache.get('initial_messages')
     if not initial_messages:
       initial_messages = '[]'
     path = os.path.join(os.path.dirname(__file__), 'index.html')
@@ -197,8 +181,6 @@ class MainPage(webapp.RequestHandler):
 
 application = webapp.WSGIApplication(
         [('/', MainPage),
-         ('/mock', MockPage),
-         ('/seed', GetSeedMessages),
          ('/sub', SubscribePage),
          ('/subcb', SubCallbackPage)],
         debug=True)
