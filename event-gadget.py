@@ -1,7 +1,11 @@
+import clients
+import pshb_client
+
 import feedparser
 import logging
 import urllib
 import os
+import zlib
 
 from datetime import datetime
 from datetime import timedelta
@@ -16,12 +20,7 @@ from google.appengine.ext.webapp.util import run_wsgi_app
 
 
 TOPIC_URL = 'http://www.dailymile.com/entries.atom'
-TOKEN_EXPIRATION = timedelta(hours = 2)
 
-class Client(db.Model):
-    created = db.DateTimeProperty(required=True, auto_now_add=True)
-
-    
 class People():
   def get_person(self, person_url):
     person = memcache.get(person_url)
@@ -59,10 +58,10 @@ class Messages():
   def messages_from_entries(self, entries):
     messages = []
     for entry in entries:
-      if entry.tags[0].term != 'http://schemas.dailymile.com/entry#workout':
+      if entry['tags'][0]['term'] != 'http://schemas.dailymile.com/entry#workout':
         continue
 
-      person = People().get_person(entry.author_detail.href)        
+      person = People().get_person(entry['author_detail']['href'])        
       if person and 'location' in person:
         latlong = Locations().get_latlong(person['location'])
       else:
@@ -71,11 +70,11 @@ class Messages():
       messages.append({
         'entry': entry['title'],
         'item': {
-          'person_url': entry.author_detail.href,
-          'person_name':  entry.author_detail.name,
-          'title': entry.title_detail.value,
-          'url': entry.links[0].href,
-          'img': entry.links[2].href,          
+          'person_url': entry['author_detail']['href'],
+          'person_name':  entry['author_detail']['name'],
+          'title': entry['title_detail']['value'],
+          'url': entry['links'][0]['href'],
+          'img': entry['links'][2]['href'],          
          },
         'latlng': latlong,
         'id': entry['id']
@@ -89,81 +88,38 @@ class Messages():
   
   def get_mock_messages(self):
     return simplejson.dumps(self.messages_from_entries(feedparser.parse(MOCK_FEED)['entries']))
-
   
-class Clients():
-  def add_client(self):
-    client = Client()
-    db.put(client)
-    logging.warning('Created new client %s' % client.created)
-    return (str(client.created), channel.create_channel(str(client.created)))
   
-  def send_filtered_messages(self, clientid, messages):
-    messages_to_send = []
-    for message in messages:
-      id = clientid + message['id']
-      if memcache.get(id):
-        continue
-      
-      memcache.add(id, 's')
-      messages_to_send.append(message)
-      
-    if len(messages_to_send):
-      message = simplejson.dumps(messages_to_send);
-      logging.debug("Sending (%s): %s" % (clientid, message))
-      channel.send_message(clientid, message)
-
-  def broadcast_messages(self, messages):
-    q = Client.all()
-    for client in q:
-      if datetime.utcnow() - client.created > TOKEN_EXPIRATION:
-        logging.debug('Removing expired client: %s' % str(client.created))
-        client.delete()
-      else:
-        self.send_filtered_messages(str(client.created), messages)
-
-  def update_clients(self, text, client=None):
-    feed = feedparser.parse(text)
-    entries = feed['entries']
-    messages = Messages().messages_from_entries(entries)
-    if client:
-      channel.send_message(client, simplejson.dumps(messages))
-    else:
-      self.broadcast_messages(messages)
+class SubCallbackPage(pshb_client.SubCallbackPage):
+  def strip_entry(self, entry):
+    return {'id': entry['id'],
+            'title': entry['title'],
+            'author_detail': entry['author_detail'],
+            'title_detail': entry['title_detail'],
+            'links': entry['links'],
+            'tags': entry['tags']}
 
 
-class SubCallbackPage(webapp.RequestHandler):
-  def get(self):
-    if self.request.get('hub.challenge'):
-      self.response.out.write(self.request.get('hub.challenge'))
-
+class BroadcastPage(webapp.RequestHandler):
   def post(self):
-    Clients().update_clients(self.request.body)
-    self.response.out.write('ok')
+    entries = simplejson.loads(self.request.body)
+    messages = Messages().messages_from_entries(entries)
+    if clients.update_clients(messages) == 0:
+      pshb_client.unsubscribe(TOPIC_URL, 'http://event-gadget.appspot.com/subcb',
+                              'http://www.pubsubhubbub.com',
+                              'tokentokentoken')
 
-    
-class SubscribePage(webapp.RequestHandler):
-  def get(self):
-    post_fields = {
-      'hub.callback': 'http://firehose-sample.appspot.com/subcb?url=http://www.dailymile.com/entries.atom',
-      'hub.mode': 'subscribe',
-      'hub.topic': TOPIC_URL,
-      'hub.verify': 'async',
-      'hub.verify_token': 'tokentokentoken'
-    }
-    url = 'http://pubsubhubbub.appspot.com/'
-    result = urlfetch.fetch (url, payload=post_fields)
-    self.response.out.write(result.status_code)
-    self.response.out.write(result.content)
-
-
+  
 class MainPage(webapp.RequestHandler):
   def get(self):
+    pshb_client.subscribe(TOPIC_URL, 'http://event-gadget.appspot.com/subcb',
+                          'http://www.pubsubhubbub.com',
+                          'tokentokentoken')
     if (not self.request.get('nt')) and ('token' in self.request.cookies):
       token = self.request.cookies['token']
     else:
-      (cid, token) = Clients().add_client()
-      expiration = (datetime.utcnow() + timedelta(hours=2)).strftime("%a, %d %b %Y %H:%M:%S GMT")
+      (cid, token) = clients.add_client()
+      expiration = (datetime.utcnow() + clients.TOKEN_EXPIRATION).strftime("%a, %d %b %Y %H:%M:%S GMT")
       self.response.headers.add_header('Set-Cookie', 'token=%s; expires=%s' % (token, expiration))
       self.response.headers.add_header('Set-Cookie', 'cid=%s; expires=%s' % (cid, expiration))
       logging.warning('Created token: %s, expires %s' % (token, expiration))
@@ -181,7 +137,7 @@ class MainPage(webapp.RequestHandler):
 
 application = webapp.WSGIApplication(
         [('/', MainPage),
-         ('/sub', SubscribePage),
+         ('/newdata', BroadcastPage),
          ('/subcb', SubCallbackPage)],
         debug=True)
 
