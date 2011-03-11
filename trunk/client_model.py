@@ -5,4 +5,5 @@ class Client(db.Model):
   field is the clientid used by the Channel API
   """
   created = db.DateTimeProperty(required=True, auto_now_add=True)
+  feeds = db.StringListProperty(required=True)
     

@@ -1,3 +1,4 @@
+import client_model
 import feedparser
 import logging
 
@@ -11,23 +12,23 @@ from google.appengine.api import memcache
 # Channel API tokens expire after two hours.
 TOKEN_EXPIRATION = timedelta(hours = 2)
 
-class Client(db.Model):
-  """A record of a client connection. The string representation of the 'created'
-  field is the clientid used by the Channel API
-  """
-  created = db.DateTimeProperty(required=True, auto_now_add=True)
-    
-def add_client():
+def add_client(feed):
   """Add a new client to the database.""" 
-  client = Client()
+  client = client_model.Client()
+  client.feeds = [feed]
   db.put(client)
   return (str(client.created), channel.create_channel(str(client.created)))
 
-def send_filtered_messages(clientid, messages):
+
+def get_memcache_id(clientid, feed, message):
+  return clientid + '.' + feed + '.' + message['id']
+
+
+def send_filtered_messages(clientid, feed, messages):
   """Send messages to a client, doing a best-effort elimination of dupes."""
   messages_to_send = []
   for message in messages:
-    id = clientid + message['id']
+    id = get_memcache_id(clientid, feed, message)
     if memcache.get(id):
       continue
     
@@ -36,10 +37,11 @@ def send_filtered_messages(clientid, messages):
     
   if len(messages_to_send):
     message = simplejson.dumps(messages_to_send);
-    logging.warning("Sending (%s): %s" % (clientid, message))
+    logging.debug("Sending (%s): %s" % (clientid, message))
     channel.send_message(clientid, message)
 
-def broadcast_messages(messages):
+
+def broadcast_messages(feed, messages):
   """Broadcast the given message list to all known clients.
   
   Args:
@@ -47,7 +49,7 @@ def broadcast_messages(messages):
     will be JSON-encoded before sending. Each message object must have an
     'id' field, used to eliminate duplicates.
   """
-  q = Client.all()
+  q = client_model.Client.all()
   active_clients = 0
   for client in q:
     if datetime.utcnow() - client.created > TOKEN_EXPIRATION:
@@ -56,15 +58,16 @@ def broadcast_messages(messages):
     else:
       active_clients += 1
       logging.debug('Sending message')
-      send_filtered_messages(str(client.created), messages)
+      send_filtered_messages(str(client.created), feed, messages)
   logging.debug('Active clients: %d' % active_clients)
   return active_clients
 
-def update_clients(messages, client=None):
+
+def update_clients(feed, messages, client=None):
   if client:
-    channel.send_message(client, simplejson.dumps(messages))
+    send_filtered_messages(client, feed, messages)
     return 1
   else:
-    return broadcast_messages(messages)
+    return broadcast_messages(feed, messages)
 
 
