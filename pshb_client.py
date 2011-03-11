@@ -1,4 +1,3 @@
-import clients
 import feedparser
 import logging
 import urllib

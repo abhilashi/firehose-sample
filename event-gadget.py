@@ -104,10 +104,15 @@ class BroadcastPage(webapp.RequestHandler):
   def post(self):
     entries = simplejson.loads(zlib.decompress(self.request.body))
     messages = Messages().messages_from_entries(entries)
-    if clients.update_clients(messages) == 0:
+    if clients.update_clients(TOPIC_URL, messages) == 0:
       pshb_client.unsubscribe(TOPIC_URL, 'http://event-gadget.appspot.com/subcb',
                               'http://www.pubsubhubbub.com',
                               'tokentokentoken')
+
+
+class MockPage(webapp.RequestHandler):
+  def get(self):
+    urlfetch.fetch(url='http://localhost:8080/subcb', payload=MOCK_FEED, method=urlfetch.POST)
 
   
 class MainPage(webapp.RequestHandler):
@@ -118,7 +123,7 @@ class MainPage(webapp.RequestHandler):
     if (not self.request.get('nt')) and ('token' in self.request.cookies):
       token = self.request.cookies['token']
     else:
-      (cid, token) = clients.add_client()
+      (cid, token) = clients.add_client(TOPIC_URL)
       expiration = (datetime.utcnow() + clients.TOKEN_EXPIRATION).strftime("%a, %d %b %Y %H:%M:%S GMT")
       self.response.headers.add_header('Set-Cookie', 'token=%s; expires=%s' % (token, expiration))
       self.response.headers.add_header('Set-Cookie', 'cid=%s; expires=%s' % (cid, expiration))
@@ -137,6 +142,7 @@ class MainPage(webapp.RequestHandler):
 
 application = webapp.WSGIApplication(
         [('/', MainPage),
+         ('/mockmockmock', MockPage),
          ('/newdata', BroadcastPage),
          ('/subcb', SubCallbackPage)],
         debug=True)
