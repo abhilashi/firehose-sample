@@ -15,10 +15,10 @@ class SubCallbackPage(webapp.RequestHandler):
       logging.debug('cb %s' % self.request.get('hub.challenge'))
       self.response.headers['Content-Type'] = 'text/plain'
       self.response.out.write(self.request.get('hub.challenge'))
-      
+
   def strip_entry(self, entry):
     return entry
-      
+
   def get_payload(self):
     """Do a first-pass removal of messages we already know about."""
     feed = feedparser.parse(self.request.body)
@@ -28,14 +28,14 @@ class SubCallbackPage(webapp.RequestHandler):
       if not memcache.get(entry['id']):
         memcache.set(entry['id'], 1)
         entries_to_send.append(self.strip_entry(entry))
-        
+
     return simplejson.dumps(entries_to_send)
 
   def post(self):
     taskqueue.add(url='/newdata', payload=zlib.compress(self.get_payload()))
     self.response.out.write('ok')
 
-    
+
 def set_subscribe_state(topic_url, callback_url, hub_url, secret, mode):
   post_fields = {
     'hub.callback': 'http://event-gadget.appspot.com/subcb?url=http://www.dailymile.com/entries.atom',
