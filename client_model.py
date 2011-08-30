@@ -6,4 +6,4 @@ class Client(db.Model):
   """
   created = db.DateTimeProperty(required=True, auto_now_add=True)
   feeds = db.StringListProperty(required=True)
-    
+  connected = db.BooleanProperty(required=True, default=False)

@@ -28,7 +28,7 @@ class People():
       response = urlfetch.fetch(person_url + '.json')
       if response.status_code != 200:
         return None
-      
+
       person = simplejson.loads(response.content)
       memcache.add(person_url, person, 24 * 60 * 60)
     return person
@@ -36,24 +36,24 @@ class People():
 
 class Locations():
   MAP_URL_TEMPLATE = 'http://maps.googleapis.com/maps/api/geocode/json?%s'
-  
+
   def get_latlong(self, location):
     latlong = memcache.get(location)
     if not latlong:
       if isinstance(location, unicode):
         location = location.encode('utf-8')
-      url = Locations.MAP_URL_TEMPLATE % urllib.urlencode({'address': location, 
+      url = Locations.MAP_URL_TEMPLATE % urllib.urlencode({'address': location,
                                                            'sensor': 'false'})
       response = urlfetch.fetch(url)
       if response.status_code != 200:
-        return None      
+        return None
       geocode_data = simplejson.loads(response.content)
       if geocode_data['status'] == 'OK':
         latlong = geocode_data['results'][0]['geometry']['location']
         memcache.add(location, latlong)
     return latlong
-  
-  
+
+
 class Messages():
   def messages_from_entries(self, entries):
     messages = []
@@ -61,12 +61,12 @@ class Messages():
       if entry['tags'][0]['term'] != 'http://schemas.dailymile.com/entry#workout':
         continue
 
-      person = People().get_person(entry['author_detail']['href'])        
+      person = People().get_person(entry['author_detail']['href'])
       if person and 'location' in person:
         latlong = Locations().get_latlong(person['location'])
       else:
         latlong = None
-      
+
       messages.append({
         'entry': entry['title'],
         'item': {
@@ -74,22 +74,22 @@ class Messages():
           'person_name':  entry['author_detail']['name'],
           'title': entry['title_detail']['value'],
           'url': entry['links'][0]['href'],
-          'img': entry['links'][2]['href'],          
+          'img': entry['links'][2]['href'],
          },
         'latlng': latlong,
         'id': entry['id']
         })
-      
+
     memcache.set('latest-unfiltered-messages', messages)
-    return messages    
-  
+    return messages
+
   def get_initial_messages(self):
     return simplejson.dumps(memcache.get('latest-unfiltered-messages') or [])
-  
+
   def get_mock_messages(self):
     return simplejson.dumps(self.messages_from_entries(feedparser.parse(MOCK_FEED)['entries']))
-  
-  
+
+
 class SubCallbackPage(pshb_client.SubCallbackPage):
   def strip_entry(self, entry):
     return {'id': entry['id'],
@@ -114,7 +114,7 @@ class MockPage(webapp.RequestHandler):
   def get(self):
     urlfetch.fetch(url='http://localhost:8080/subcb', payload=MOCK_FEED, method=urlfetch.POST)
 
-  
+
 class MainPage(webapp.RequestHandler):
   def get(self):
     pshb_client.subscribe(TOPIC_URL, 'http://event-gadget.appspot.com/subcb',
@@ -124,11 +124,12 @@ class MainPage(webapp.RequestHandler):
       token = self.request.cookies['token']
     else:
       (cid, token) = clients.add_client(TOPIC_URL)
+      logging.warning('Created client: %s' % cid)
       expiration = (datetime.utcnow() + clients.TOKEN_EXPIRATION).strftime("%a, %d %b %Y %H:%M:%S GMT")
       self.response.headers.add_header('Set-Cookie', 'token=%s; expires=%s' % (token, expiration))
       self.response.headers.add_header('Set-Cookie', 'cid=%s; expires=%s' % (cid, expiration))
       logging.warning('Created token: %s, expires %s' % (token, expiration))
-      
+
     if self.request.get('mock'):
       initial_messages = Messages().get_mock_messages()
     else:
@@ -140,8 +141,24 @@ class MainPage(webapp.RequestHandler):
     self.response.out.write(template.render(path, {'token': token, 'initial_messages': initial_messages}));
 
 
+class ChannelConnectedPage(webapp.RequestHandler):
+  def post(self):
+    cid = self.request.get('from')
+    logging.info('Channel connected: %s' % cid)
+    clients.connect_client(cid)
+
+
+class ChannelDisconnectedPage(webapp.RequestHandler):
+  def post(self):
+    cid = self.request.get('from')
+    logging.info('Channel disconnected: %s' % cid)
+    clients.disconnect_client(cid)
+
+
 application = webapp.WSGIApplication(
         [('/', MainPage),
+         ('/_ah/channel/connected/', ChannelConnectedPage),
+         ('/_ah/channel/disconnected/', ChannelDisconnectedPage),
          ('/mockmockmock', MockPage),
          ('/newdata', BroadcastPage),
          ('/subcb', SubCallbackPage)],
@@ -149,7 +166,7 @@ application = webapp.WSGIApplication(
 
 def main():
   run_wsgi_app(application)
-  
+
 MOCK_FEED = """
 <?xml version="1.0" encoding="UTF-8"?>
 <feed xml:lang="en-US" xmlns="http://www.w3.org/2005/Atom" xmlns:activity="http://activitystrea.ms/spec/1.0/" xmlns:media="http://example.com/to-be-confirmed" xmlns:thr="http://purl.org/syndication/thread/1.0">
@@ -680,7 +697,7 @@ MOCK_FEED = """
   </entry>
 </feed>
 """
-  
+
 
 if __name__ == "__main__":
   main()
