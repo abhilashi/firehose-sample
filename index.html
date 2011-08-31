@@ -71,16 +71,16 @@
     .events {
       padding-bottom: 10px;
     }
-    
+
     .infoparent {
       width: 250px;
     }
-    
+
     .infopic {
       float: left;
       width: 50px;
     }
-    
+
     .infotext {
       float: right;
       width: 200px;
@@ -97,7 +97,7 @@
     var item_count = 0;
     var messages = JSON.parse('{{ initial_messages }}');
     var initialMessagesCount = messages.length;
-    
+
     function initialize() {
       var latlng = new google.maps.LatLng(47.7, -122.2);
       var myOptions = {
@@ -116,7 +116,7 @@
         google.maps.event.removeListener(listener);
       });
     }
-    
+
     function makeInfoWindowContent(msg) {
       return "<div class='infoparent'><div class='infopic'><img src='" + 
           msg['photo_url'] + "'></div>" +
@@ -124,7 +124,7 @@
           msg['entry-content'] +
           "</div></div>"
     }
-    
+
     function addActivityItem(msg) {
       var even_or_odd;
       if (item_count % 2 == 0) {
@@ -133,9 +133,9 @@
         even_or_odd = 'odd';
       }
       item_count = (item_count + 1) % 10;
-      
+
       item_id = 'item-' + item_count;
-      
+
       var template =
           "<div class='items' id='" + item_id + "'>"+
             "<div class='item " + even_or_odd + "'>" +
@@ -157,7 +157,7 @@
           document.getElementById('activity_items').innerHTML = template + currHtml;
         }, 100);
     }
-    
+
     function fitBounds() {
 //      last_latlng = last_latlng.slice(0, 10);
       var needs_resize = false;
@@ -183,14 +183,14 @@
           min_lng = Math.min(min_lng, last_latlng[i].lng());
           max_lng = Math.max(max_lng, last_latlng[i].lng());
         }
-            
+
         var ul = new google.maps.LatLng(min_lat, min_lng);
         var lr = new google.maps.LatLng(max_lat, max_lng);
         var bounds = new google.maps.LatLngBounds(ul, lr);
         map.fitBounds(bounds);
       }
     }
-    
+
     function processMessages() {
       if (messages.length == 0) {
         return;
@@ -212,8 +212,8 @@
         addActivityItem(msg);
       }
     }
-  
-    var onopen = function() {
+
+    var on_open = function() {
       // if we didn't get any initial messages, ask for them.
       if (initialMessagesCount == 0) {
         var xhr = new XMLHttpRequest();
@@ -221,11 +221,11 @@
         xhr.send();  
       }      
     };
-    var onclose = function() {
+    var on_close = function() {
     };
-    var onerror = function(err) {
+    var on_error = function(err) {
     };
-    var onmessage = function(evt) {
+    var on_message = function(evt) {
       messages = messages.concat(JSON.parse(evt.data));
     }
   </script>
@@ -234,10 +234,10 @@
 <script type="text/javascript">
   var channel = new goog.appengine.Channel('{{ token }}');
   var handler = {
-             'onopen': onopen,
-             'onclose': onclose,
-             'onerror': onerror,
-             'onmessage': onmessage
+             'onopen': on_open,
+             'onclose': on_close,
+             'onerror': on_error,
+             'onmessage': on_message
              };
   var socket = channel.open(handler);
 </script>
