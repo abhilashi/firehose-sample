@@ -10,6 +10,7 @@ import zlib
 from datetime import datetime
 from datetime import timedelta
 from django.utils import simplejson
+from google.appengine.api import app_identity
 from google.appengine.api import channel
 from google.appengine.ext import db
 from google.appengine.api import memcache
@@ -105,7 +106,8 @@ class BroadcastPage(webapp.RequestHandler):
     entries = simplejson.loads(zlib.decompress(self.request.body))
     messages = Messages().messages_from_entries(entries)
     if clients.update_clients(TOPIC_URL, messages) == 0:
-      pshb_client.unsubscribe(TOPIC_URL, 'http://event-gadget.appspot.com/subcb',
+      hostname = app_identity.get_default_version_hostname()
+      pshb_client.unsubscribe(TOPIC_URL, 'http://' + hostname + '/subcb',
                               'http://www.pubsubhubbub.com',
                               'tokentokentoken')
 
@@ -117,7 +119,8 @@ class MockPage(webapp.RequestHandler):
 
 class MainPage(webapp.RequestHandler):
   def get(self):
-    pshb_client.subscribe(TOPIC_URL, 'http://event-gadget.appspot.com/subcb',
+    hostname = app_identity.get_default_version_hostname()
+    pshb_client.subscribe(TOPIC_URL, 'http://' + hostname + '/subcb',
                           'http://www.pubsubhubbub.com',
                           'tokentokentoken')
     if (not self.request.get('nt')) and ('token' in self.request.cookies):

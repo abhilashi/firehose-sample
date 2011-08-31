@@ -4,6 +4,7 @@ import urllib
 import zlib
 
 from django.utils import simplejson
+from google.appengine.api import app_identity
 from google.appengine.api import memcache
 from google.appengine.api import taskqueue
 from google.appengine.api import urlfetch
@@ -37,8 +38,9 @@ class SubCallbackPage(webapp.RequestHandler):
 
 
 def set_subscribe_state(topic_url, callback_url, hub_url, secret, mode):
+  hostname = app_identity.get_default_version_hostname()
   post_fields = {
-    'hub.callback': 'http://event-gadget.appspot.com/subcb?url=http://www.dailymile.com/entries.atom',
+    'hub.callback': 'http://' + hostname + '/subcb?url=http://www.dailymile.com/entries.atom',
     'hub.mode': mode,
     'hub.topic': topic_url,
     'hub.verify': 'async',
@@ -50,7 +52,7 @@ def set_subscribe_state(topic_url, callback_url, hub_url, secret, mode):
   logging.debug('%s (%s): %d: %s' % (url, str(post_fields), response.status_code, response.content))
 
 def subscribe(topic_url, callback_url, hub_url, secret):
-  logging.debug('Subscribing.')
+  logging.debug('Subscribing with callback %s' % callback_url)
   set_subscribe_state(topic_url, callback_url, hub_url, secret, 'subscribe')
 
 def unsubscribe(topic_url, callback_url, hub_url, secret):
