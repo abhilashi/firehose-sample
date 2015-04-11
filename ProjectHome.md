@@ -1,0 +1,1 @@
+This app uses PubSubHubbub to subscribe to a few related feeds and provides rich, instantly updating web UI based on the content of those feeds.
